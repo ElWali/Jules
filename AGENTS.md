@@ -1,12 +1,12 @@
-# QRpedia Project Guide for AI Agents
+# RQpedia Project Guide for AI Agents
 
-Welcome to QRpedia, a lightweight, open-source platform for exploring archaeological data. This guide provides instructions and conventions for AI agents working on this repository.
+Welcome to RQpedia, a lightweight, open-source platform for exploring archaeological data. This guide provides instructions and conventions for AI agents working on this repository.
 
 ## 1. Project Overview
 
-QRpedia is a simplified alternative to complex databases. Its goal is to provide a simple, intuitive, and open-source interface for archaeological data, making it easy for both users and developers to adopt and contribute.
+RQpedia is a simplified alternative to complex databases. Its goal is to provide a simple, intuitive, and open-source interface for archaeological data, making it easy for both users and developers to adopt and contribute.
 
-- **Project Name:** QRpedia
+- **Project Name:** RQpedia
 - **Primary Data Source:** `VX/output.json`
 - **Core Technologies:** HTML, CSS, JavaScript, Leaflet.js
 - **Key Files:**
