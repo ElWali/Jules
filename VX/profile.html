@@ -8,6 +8,8 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" integrity="sha512-xodZBNTC5n17Xt2atTPuE1HxjVMSvLVW9ocqUKLsCC5CXdbqCmblAshOMAS6/keqq/sMZMZ19scR4PsZChSR7A==" crossorigin="" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" />
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js" defer></script>
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js" defer></script>
 </head>
 <body>
     <header>
@@ -28,6 +30,14 @@
         <aside class="panel">
             <div class="info-card">
                 <div class="site-header">
+                    <div class="site-selector-container">
+                        <select id="site-selector" class="site-selector"></select>
+                        <div class="selector-nav">
+                            <button id="prev-site" class="small-btn">&lt; Prev</button>
+                            <button id="next-site" class="small-btn">Next &gt;</button>
+                        </div>
+                    </div>
+                    <input type="search" id="search-filter" placeholder="Filter sites..." class="site-search">
                     <h1 id="site-name">Loading…</h1>
                     <p class="site-type">Archaeological site in <span id="site-country-subheader"></span></p>
                     <div class="site-meta">
@@ -53,11 +63,18 @@
                         <th>Country</th>
                         <td id="country" data-label="Country"></td>
                     </tr>
+                    <tr>
+                        <th>Site Type</th>
+                        <td id="site-type" data-label="Site Type"></td>
+                    </tr>
                 </table>
             </div>
 
             <!-- Map -->
             <div id="map"></div>
+            <div class="map-controls">
+                <button id="center-map" class="small-btn">Center Map</button>
+            </div>
         </aside>
 
         <section>
@@ -83,6 +100,15 @@
                 </table>
             </div>
 
+            <!-- Timeline and Histogram -->
+            <div id="charts" class="info-card">
+                <h2 class="info-card-header">Timeline and Histogram</h2>
+                <div style="padding: 16px 20px;">
+                    <canvas id="timeline-chart"></canvas>
+                    <canvas id="histogram-chart"></canvas>
+                </div>
+            </div>
+
             <!-- Typological Dates -->
             <div class="info-card">
                 <h2 class="info-card-header">Typological Dates</h2>
@@ -98,6 +124,22 @@
                         <!-- Populated by script -->
                     </tbody>
                 </table>
+            </div>
+
+            <!-- Dated Materials -->
+            <div class="info-card">
+                <h2 class="info-card-header">Dated Materials</h2>
+                <div style="padding: 16px 20px;">
+                    <canvas id="materials-chart"></canvas>
+                </div>
+            </div>
+
+            <!-- Site Types -->
+            <div class="info-card">
+                <h2 class="info-card-header">Site Types Distribution</h2>
+                <div style="padding: 16px 20px;">
+                    <canvas id="site-types-chart"></canvas>
+                </div>
             </div>
 
             <!-- Bibliographic References -->
@@ -128,6 +170,18 @@
                 <div id="linked-data-content" style="padding: 0 20px 16px;" aria-live="polite">
                     <p style="color: var(--muted);">Loading linked open data from Wikidata and DBpedia…</p>
                 </div>
+                <div id="media-content" style="padding: 0 20px 16px;" aria-live="polite">
+                    <p style="color: var(--muted);">Loading media…</p>
+                </div>
+            </div>
+
+            <!-- Actions -->
+            <div class="info-card">
+                <h2 class="info-card-header">Actions</h2>
+                <div style="padding: 16px 20px;">
+                    <button id="download-csv" class="small-btn">Download CSV</button>
+                    <button id="clear-linked-cache" class="small-btn">Clear Cache</button>
+                </div>
             </div>
         </section>
     </main>
@@ -142,193 +196,6 @@
         </p>
     </footer>
 
-    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
-    <script>
-        // === UTILITIES ===
-        const escapeHtml = (str) => {
-            if (typeof str !== 'string') return '';
-            return str.replace(/&/g, '&amp;').replace(/</g, '<').replace(/>/g, '>').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
-        };
-
-        function safeParsePossibleJSONField(val) {
-            if (!val && val !== 0) return null;
-            if (Array.isArray(val) || typeof val === 'object') return val;
-            try {
-                return JSON.parse(val);
-            } catch (e) {
-                try {
-                    let v = val.replace(/\"\"/g, '"');
-                    v = v.replace(/\s+\\n\s+/g, ' ');
-                    if (/^\{.*\}$/.test(v) && !v.startsWith('[')) v = `[${v}]`;
-                    return JSON.parse(v);
-                } catch (e2) {
-                    const stripped = val.replace(/^[\[\]"\s]+|[\[\]"\s]+$/g, '');
-                    if (!stripped) return null;
-                    const parts = stripped.split(/\}\s*,\s*\{/).map(s => s.replace(/^[\{\}]+|[\{\}]+$/g,''));
-                    const out = parts.map(p => {
-                        const obj = {};
-                        p.split(/\s*,\s*/).forEach(kv => {
-                            const m = kv.match(/([^:]+):\s*(.*)/) || kv.match(/"([^"]+)"\s*:\s*"([^"]+)"/);
-                            if (m) {
-                                const key = m[1].replace(/^"|"$/g,'').trim();
-                                const value = (m[2] || '').replace(/^"|"$/g,'').trim();
-                                obj[key] = value;
-                            }
-                        });
-                        return obj;
-                    });
-                    return out.length ? out : null;
-                }
-            }
-        }
-
-        function formatDMS(deg, latOrLng = 'lat') {
-            if (deg == null || Number.isNaN(deg)) return '—';
-            const sign = deg >= 0 ? 1 : -1;
-            const abs = Math.abs(deg);
-            const d = Math.floor(abs);
-            const mFloat = (abs - d) * 60;
-            const m = Math.floor(mFloat);
-            const s = ((mFloat - m) * 60).toFixed(1);
-            if (latOrLng === 'lat') {
-                return `${d}°${m}'${s}" ${deg >= 0 ? 'N' : 'S'}`;
-            }
-            return `${d}°${m}'${s}" ${deg >= 0 ? 'E' : 'W'}`;
-        }
-
-        let mapInstance = null;
-        let mapMarker = null;
-
-        function renderMap(lat, lng, siteName) {
-            const mapEl = document.getElementById('map');
-            if (!mapInstance) {
-                mapInstance = L.map(mapEl, { zoomControl: true, attributionControl: true });
-                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                    maxZoom: 19,
-                    attribution: '&copy; OpenStreetMap contributors'
-                }).addTo(mapInstance);
-            }
-            if (mapMarker) {
-                mapMarker.remove();
-                mapMarker = null;
-            }
-            if (lat != null && lng != null) {
-                mapInstance.setView([lat, lng], 9);
-                mapMarker = L.marker([lat, lng]).addTo(mapInstance).bindPopup(`<strong>${escapeHtml(siteName)}</strong>`);
-            } else {
-                mapInstance.setView([30, 0], 3);
-            }
-        }
-
-        // === RENDER PROFILE ===
-        function renderProfilePage(siteData, allData) {
-            const siteName = siteData.site;
-            const records = allData.filter(d => (d.site || '').toLowerCase() === siteName.toLowerCase());
-
-            // Header
-            document.getElementById('site-name').textContent = siteName;
-            document.getElementById('site-country-subheader').textContent = siteData.country || '—';
-            document.getElementById('country').textContent = siteData.country || '—';
-            const created = siteData.created_at ? new Date(siteData.created_at).toLocaleDateString() : 'N/A';
-            const updated = siteData.updated_at ? new Date(siteData.updated_at).toLocaleDateString() : 'N/A';
-            document.getElementById('created-date').textContent = created;
-            document.getElementById('updated-date').textContent = updated;
-
-            // Coordinates
-            const lat = parseFloat(siteData.lat);
-            const lng = parseFloat(siteData.lng);
-            document.getElementById('coords-deg').textContent = (lat && lng) ? `${lat.toFixed(5)}, ${lng.toFixed(5)}` : '—';
-            document.getElementById('coords-dms').textContent = (lat && lng) ? `${formatDMS(lat, 'lat')}, ${formatDMS(lng, 'lng')}` : '—';
-
-            // Map
-            renderMap(lat, lng, siteName);
-
-            // Radiocarbon Table
-            const c14Tbody = document.querySelector('#c14-table tbody');
-            c14Tbody.innerHTML = '';
-            const c14Records = records.filter(r => r.bp && r.std);
-            if(c14Records.length > 0) {
-                c14Records.forEach(r => {
-                    const tr = document.createElement('tr');
-                    tr.innerHTML = `
-                        <td data-label="Lab ID">${escapeHtml(r.labnr || '—')}</td>
-                        <td data-label="Context">${escapeHtml(r.feature_type || '—')}</td>
-                        <td data-label="Material">${escapeHtml(r.material || '—')}</td>
-                        <td data-label="Taxon">${escapeHtml(r.species || '—')}</td>
-                        <td data-label="Method">Radiocarbon</td>
-                        <td data-label="Uncalibrated age">${r.bp} ± ${r.std}</td>
-                        <td data-label="Calibrated age">${escapeHtml(r.cal_bp || '—')}</td>
-                        <td data-label="References">${escapeHtml(r.reference || '—')}</td>
-                    `;
-                    c14Tbody.appendChild(tr);
-                });
-            } else {
-                c14Tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; color: var(--muted);">No radiocarbon data available.</td></tr>';
-            }
-
-            // Typological Table
-            const typoTbody = document.querySelector('#typo-table tbody');
-            typoTbody.innerHTML = '';
-            const typoRecords = records.flatMap(r => safeParsePossibleJSONField(r.typochronological_units) || []);
-             if(typoRecords.length > 0) {
-                typoRecords.forEach(t => {
-                    const tr = document.createElement('tr');
-                    tr.innerHTML = `
-                        <td data-label="Classification">${escapeHtml(t.typochronological_unit || '—')}</td>
-                        <td data-label="Estimated age">—</td>
-                        <td data-label="References">${escapeHtml(siteData.reference || '—')}</td>
-                    `;
-                    typoTbody.appendChild(tr);
-                });
-            } else {
-                typoTbody.innerHTML = '<tr><td colspan="3" style="text-align:center; color: var(--muted);">No typological data available.</td></tr>';
-            }
-
-            // References
-            const refs = [...new Set(records.map(r => r.reference).filter(Boolean))];
-            const refsContainer = document.getElementById('references-container');
-            refsContainer.innerHTML = '';
-            if (refs.length > 0) {
-                refs.forEach(ref => {
-                    refsContainer.innerHTML += `<p>${escapeHtml(ref)}</p>`;
-                });
-            } else {
-                refsContainer.innerHTML = '<p style="color: var(--muted);">No bibliographic references available.</p>';
-            }
-        }
-
-
-        // === DATA FETCHING & INITIALIZATION ===
-        document.addEventListener('DOMContentLoaded', () => {
-            const urlParams = new URLSearchParams(window.location.search);
-            const siteId = decodeURIComponent(urlParams.get('id') || '').trim();
-
-            if (!siteId) {
-                document.getElementById('site-name').textContent = 'Site not specified';
-                return;
-            }
-
-            fetch('output.json')
-                .then(response => {
-                    if (!response.ok) throw new Error('output.json not found');
-                    return response.json();
-                })
-                .then(data => {
-                    const siteData = data.find(s => s.id === siteId);
-
-                    if (!siteData) {
-                        document.getElementById('site-name').textContent = 'Site not found';
-                        return;
-                    }
-
-                    renderProfilePage(siteData, data);
-
-                })
-                .catch(error => {
-                    console.error('Failed to load site data:', error);
-                    document.getElementById('site-name').textContent = 'Error loading site data';
-                });
-        });
-    </script>
+    <script src="profile.js" type="module"></script>
 </body>
 </html>
