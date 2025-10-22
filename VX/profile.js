@@ -276,6 +276,8 @@ let mapInstance = null;
 let mapMarker = null;
 let timelineChart = null;
 let histogramChart = null;
+let materialsChart = null;
+let siteTypesChart = null;
 
 async function loadData() {
     const resp = await fetch(OUTPUT_JSON);
@@ -424,6 +426,7 @@ async function renderProfileByIndex(idx) {
 
     // Charts
     buildCharts(records);
+    buildDistributionCharts(records);
 
     // Linked data + media (with caching)
     await fetchAndRenderLinkedData(siteName, rep.wikidata_id || null);
@@ -580,6 +583,88 @@ function buildCharts(records) {
     q('#charts').style.display = 'flex';
 }
 
+function buildDistributionCharts(records) {
+    // Material distribution
+    const materialsCtx = q('#materials-chart').getContext('2d');
+    if (materialsChart) materialsChart.destroy();
+
+    const materialCounts = records.reduce((acc, r) => {
+        const material = r.material || 'Unknown';
+        acc[material] = (acc[material] || 0) + 1;
+        return acc;
+    }, {});
+
+    console.log('Material Counts:', materialCounts); // Debugging line
+
+    const materialLabels = Object.keys(materialCounts);
+    const materialData = Object.values(materialCounts);
+
+    materialsChart = new Chart(materialsCtx, {
+        type: 'doughnut',
+        data: {
+            labels: materialLabels,
+            datasets: [{
+                label: 'Dated Materials',
+                data: materialData,
+                backgroundColor: [
+                    '#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40'
+                ]
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: {
+                    position: 'top',
+                },
+                title: {
+                    display: false,
+                    text: 'Distribution of Dated Materials'
+                }
+            }
+        }
+    });
+
+    // Site Type distribution
+    const siteTypesCtx = q('#site-types-chart').getContext('2d');
+    if (siteTypesChart) siteTypesChart.destroy();
+
+    const siteTypeCounts = records.reduce((acc, r) => {
+        const siteType = r.site_type || 'Unknown';
+        acc[siteType] = (acc[siteType] || 0) + 1;
+        return acc;
+    }, {});
+
+    const siteTypeLabels = Object.keys(siteTypeCounts);
+    const siteTypeData = Object.values(siteTypeCounts);
+
+    siteTypesChart = new Chart(siteTypesCtx, {
+        type: 'polarArea',
+        data: {
+            labels: siteTypeLabels,
+            datasets: [{
+                label: 'Site Types',
+                data: siteTypeData,
+                backgroundColor: [
+                    '#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40'
+                ]
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: {
+                    position: 'top',
+                },
+                title: {
+                    display: false,
+                    text: 'Distribution of Site Types'
+                }
+            }
+        }
+    });
+}
+
 // -----------------------------
 // Download CSV generator
 // -----------------------------
@@ -595,12 +680,17 @@ function downloadSiteC14CSV(siteName, records) {
 // UI wiring
 // -----------------------------
 function wireUI() {
-    q('#site-selector').addEventListener('change', async (e) => {
-        const idx = e.target.selectedIndex;
-        await renderProfileByIndex(idx);
-    });
+    const siteSelector = q('#site-selector');
+    if (siteSelector) {
+        siteSelector.addEventListener('change', async (e) => {
+            const idx = e.target.selectedIndex;
+            await renderProfileByIndex(idx);
+        });
+    }
 
-    q('#search-filter').addEventListener('input', (e) => {
+    const searchFilter = q('#search-filter');
+    if (searchFilter) {
+        searchFilter.addEventListener('input', (e) => {
         const qv = e.target.value.trim().toLowerCase();
         const sel = q('#site-selector');
         // filter site options by matching text
@@ -647,7 +737,7 @@ function wireUI() {
 // -----------------------------
 // Init
 // -----------------------------
-window.addEventListener('DOMContentLoaded', async () => {
+async function main() {
     try {
         wireUI();
         await loadData();
@@ -655,5 +745,13 @@ window.addEventListener('DOMContentLoaded', async () => {
         console.error('Initialization failed', e);
         q('#site-name').textContent = 'Failed to load data';
         q('#linked-data-content').textContent = 'Failed to load linked data.';
+    }
+}
+
+window.addEventListener('DOMContentLoaded', () => {
+    if (window.L && window.Chart) {
+        main();
+    } else {
+        window.addEventListener('load', main);
     }
 });
