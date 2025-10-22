@@ -1,0 +1,29 @@
+:root {
+    --bg: #ffffff;
+    --surface: #f8f9fa;
+    --text: #212529;
+    --accent: #007bff;
+}
+
+body {
+    background-color: var(--bg);
+    color: var(--text);
+    font-family: sans-serif;
+    margin: 0;
+    padding: 20px;
+}
+
+#map {
+    height: 500px;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+th, td {
+    padding: 8px;
+    text-align: left;
+    border-bottom: 1px solid #ddd;
+}

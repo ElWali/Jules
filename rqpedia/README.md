@@ -1,26 +1,13 @@
 # RQpedia
 
-1) Install root deps
-   npm install
+RQpedia is a lightweight, open-source platform for exploring archaeological data.
 
-2) Install frontend deps
-   cd web
-   npm install
-   cd ..
+## Development
 
-3) Place your data file
-   Put your output.json into ./data/output.json
+To run the application locally, start a simple Python HTTP server from the root of the repository:
 
-4) Run dev (server + vite)
-   npm run dev
+```bash
+python3 -m http.server 8000 --directory rqpedia &
+```
 
-   - Backend on http://localhost:4000
-   - Frontend on http://localhost:5173 (Vite)
-
-5) Build for production
-   npm run build
-   npm start     # serves built frontend via Express
-
-6) Run Electron (dev)
-   In one terminal: npm run dev
-   In another: npm run electron
+You can then access the application at `http://localhost:8000`.
