@@ -1,6 +1,6 @@
 // profile.js
 console.log("profile.js executed");
-const OUTPUT_JSON = 'output.json';
+const OUTPUT_JSON = 'output_grouped.json';
 const LINKED_CACHE_KEY = 'rqpedia_linked_cache_v1';
 
 // -----------------------------
@@ -230,7 +230,7 @@ async function fetchAndRenderLinkedData(siteName, wikidataHint = null) {
 // -----------------------------
 // Data loader and UI wiring
 // -----------------------------
-let ALL_DATA = [];
+let ALL_DATA = {};
 let SITE_INDEX = [];
 let currentSiteIdx = -1;
 let mapInstance = null;
@@ -243,41 +243,21 @@ let siteTypesChart = null;
 async function loadData() {
     const resp = await fetch(OUTPUT_JSON);
     if (!resp.ok) throw new Error('Could not load output.json');
-    const js = await resp.json();
-    // normalise objects: ensure types, parse fields
-    const normalized = js.map(row => {
-        const newRow = { ...row };
-        newRow.site = normalizeString(row.site || row.site_name || row.Site || '');
-        newRow.labnr = normalizeString(row.labnr || row.lab || '');
-        newRow.bp = parseNumber(row.bp);
-        newRow.std = parseNumber(row.std);
-        newRow.delta_c13 = parseNumber(row.delta_c13);
-        newRow.lat = parseNumber(row.lat);
-        newRow.lng = parseNumber(row.lng);
-        newRow.material = normalizeString(row.material);
-        newRow.feature_type = normalizeString(row.feature_type || row.feature || '');
-        newRow.reference = normalizeString(row.reference);
-        // parse periods & typo arrays defensively
-        newRow.periods_parsed = parseMalformedJson(row.periods) || parseMalformedJson(row.periods || row.periods_parsed) || [];
-        newRow.typo_parsed = parseMalformedJson(row.typochronological_units) || [];
-        newRow.eco_parsed = parseMalformedJson(row.ecochronological_units) || [];
-        // any wikidata id if present
-        newRow.wikidata_id = normalizeString(row.wikidata_id || row.wikidata || row.wd);
-        return newRow;
-    });
-
-    ALL_DATA = normalized;
+    ALL_DATA = await resp.json();
 
     // build unique site index (preserve order)
-    const siteMap = new Map();
-    normalized.forEach(r => {
-        const name = r.site || '(unknown)';
-        if (!siteMap.has(name)) {
-            siteMap.set(name, { site: name, country: r.country || '', lat: r.lat, lng: r.lng, count: 0 });
-        }
-        siteMap.get(name).count += 1;
-    });
-    SITE_INDEX = Array.from(siteMap.values()).sort((a,b) => (b.count - a.count) || a.site.localeCompare(b.site));
+    SITE_INDEX = Object.keys(ALL_DATA).map(siteName => {
+        const records = ALL_DATA[siteName];
+        const rep = records.find(r => r.lat && r.lng) || records[0];
+        return {
+            site: siteName,
+            country: rep.country || '',
+            lat: rep.lat,
+            lng: rep.lng,
+            count: records.length
+        };
+    }).sort((a,b) => (b.count - a.count) || a.site.localeCompare(b.site));
+
     buildSiteSelector();
     // once loaded, try to find id param
     const urlParams = new URLSearchParams(window.location.search);
@@ -321,7 +301,8 @@ async function renderProfileByIndex(idx) {
     if (idx < 0 || idx >= SITE_INDEX.length) return;
     currentSiteIdx = idx;
     const siteName = SITE_INDEX[idx].site;
-    const records = ALL_DATA.filter(d => (d.site || '').toLowerCase() === siteName.toLowerCase());
+    const records = ALL_DATA[siteName] || [];
+
     if (!records.length) {
         q('#site-name').textContent = 'Site not found';
         return;
@@ -416,6 +397,7 @@ function escapeHtml(s='') {
 // Map helpers
 // -----------------------------
 function renderMap(lat, lng, siteName) {
+    const siteRecords = ALL_DATA[siteName] || [];
     const mapEl = q('#map');
     // lazy init
     if (!mapInstance) {
@@ -434,11 +416,11 @@ function renderMap(lat, lng, siteName) {
         mapMarker = L.marker([lat, lng]).addTo(mapInstance).bindPopup(`<strong>${escapeHtml(siteName)}</strong><br>${lat.toFixed(5)}, ${lng.toFixed(5)}`);
     } else {
         // try to show all markers from dataset for site
-        const siteRecords = ALL_DATA.filter(d => (d.site||'').toLowerCase() === (siteName || '').toLowerCase() && d.lat != null && d.lng != null);
-        if (siteRecords.length) {
-            const bounds = L.latLngBounds(siteRecords.map(r => [r.lat, r.lng]));
+        const recordsWithCoords = siteRecords.filter(d => d.lat != null && d.lng != null);
+        if (recordsWithCoords.length) {
+            const bounds = L.latLngBounds(recordsWithCoords.map(r => [r.lat, r.lng]));
             mapInstance.fitBounds(bounds.pad(0.25));
-            siteRecords.forEach(r => {
+            recordsWithCoords.forEach(r => {
                 L.marker([r.lat, r.lng]).addTo(mapInstance);
             });
         } else {
@@ -707,6 +689,7 @@ async function main() {
         console.error('Initialization failed', e);
         q('#site-name').textContent = 'Failed to load data';
         q('#linked-data-content').textContent = 'Failed to load linked data.';
+        console.log(e);
     }
 }
 
